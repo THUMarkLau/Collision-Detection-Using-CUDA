@@ -1,6 +1,6 @@
 import numpy.random as r
 
-BALL_NUM = 400
+BALL_NUM = 2000
 
 def main():
     f = open("balls.txt", "w")

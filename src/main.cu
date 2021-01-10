@@ -8,6 +8,8 @@
 #include <device_launch_parameters.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <algorithm>
+#include <Windows.h>
 
 #include "shader.h"
 #include "camera.h"
@@ -20,6 +22,8 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void genBall(std::vector<float>& i, std::vector<int>& j);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+int cmp(const SpaceRecord& a, const SpaceRecord& b);
+
 
 // variables
 bool firstMouse = true;
@@ -29,8 +33,7 @@ float delta_time;
 float last_frame_time = -1;
 Camera camera;
 
-int main()
-{
+int main() {
     Space* space = nullptr;
     std::vector<Ball> balls_vec;
     if (!initData(&space, balls_vec)) {
@@ -44,7 +47,12 @@ int main()
     for (int i = 0; i < balls_num; ++i) {
         balls[i] = balls_vec[i];
     }
-    
+    CollisionRecord* collision_records = nullptr;
+    size_t collision_records_memory_size = sizeof(CollisionRecord) * balls_num * 4;
+    cudaMallocManaged((void**)&collision_records, sizeof(CollisionRecord) * balls_num * 4);
+    SpaceRecord* space_records = nullptr;
+    size_t space_records_memory_size = sizeof(SpaceRecord) * balls_num * 8;
+    cudaMallocManaged((void**)&space_records, sizeof(SpaceRecord) * balls_num * 8);
 
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -151,16 +159,39 @@ int main()
     // 开始进行运算
     dim3 threadPerBlock(SUBSPACE_X / 4, SUBSPACE_Y / 4, SUBSPACE_Z / 4);
     dim3 numBlocks(4, 4, 4);
+    double totalFrame = 0;
+    float startTime = glfwGetTime();
+    int B = SUBSPACE_X / 4 * SUBSPACE_Y / 4 * SUBSPACE_Z / 4;
+    int T = SUBSPACE_X * SUBSPACE_Y * SUBSPACE_Z;
+    last_frame_time = glfwGetTime();
+    printf("margin_x: %f, margin_y: %f, margin_z: %f\n", X_MARGIN, Y_MARGIN, Z_MARGIN);
     while (!glfwWindowShouldClose(window))
     {
         float currentFrame = glfwGetTime();
         delta_time = currentFrame - last_frame_time;
         last_frame_time = currentFrame;
         processInput(window);
+        totalFrame += 1;
         // 碰撞检测，并且更新每个球的位置
-        collisionDetectionAndUpdate << <numBlocks, threadPerBlock >> > (space, balls);
+        collisionDetectionAndUpdate << <numBlocks, threadPerBlock >> > (balls, B, T, balls_num, delta_time);
         cudaDeviceSynchronize();
+        int totalRecord = 0;
+        for (int i = 0; i < balls_num; ++i) {
+            for (int j = 0; j < balls[i].record_num; ++j) {
+                space_records[totalRecord++] = balls[i].records[j];
+            }
+        }
 
+        std::sort(space_records, space_records + totalRecord, cmp);
+        int collision_time = findCollisionRecords(space_records, totalRecord, collision_records);
+
+        for (int i = 0; i < 8; ++i) {
+            doCollision << <numBlocks, threadPerBlock >> > (i, balls, balls_num, space_records, collision_records, collision_time, B, T);
+            cudaDeviceSynchronize();
+        }
+
+        getSpaceRecords<<<numBlocks, threadPerBlock>>>(balls, balls_num, B, T);
+        cudaDeviceSynchronize();
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -205,7 +236,10 @@ int main()
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+        // system("cls");
     }
+    float fps = totalFrame / (glfwGetTime() - startTime);
+    printf("fps: %.2f\n", fps);
 
     glfwTerminate();
     return 0;
@@ -294,4 +328,32 @@ void genBall(std::vector<float> &sphereVertices, std::vector<int> &sphereIndices
         }
     }
 
+}
+
+int cmp(const SpaceRecord& a, const SpaceRecord& b) {
+    if (a.i > b.i) {
+        return 0;
+    }
+    else if (a.i < b.i) {
+        return 1;
+    }
+    else {
+        if (a.j > b.j) {
+            return 0;
+        }
+        else if (a.j < b.j) {
+            return 1;
+        }
+        else {
+            if (a.k > b.k) {
+                return 0;
+            }
+            else if (a.k < b.k) {
+                return 1;
+            }
+            else {
+                return 0;
+            }
+        }
+    }
 }

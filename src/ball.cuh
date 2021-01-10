@@ -10,7 +10,25 @@ typedef struct SpaceRecord {
 	int i, j, k;
 	int ball_idx;
 	bool is_home;
+	int space_idx;
+	bool operator ==(const SpaceRecord& sr)const;
+	bool operator >=(const SpaceRecord& sr)const;
+	bool operator <=(const SpaceRecord& sr)const;
+	bool operator >(const SpaceRecord& sr)const;
+	bool operator !=(const SpaceRecord& sr)const;
 } SpaceRecord;
+
+typedef struct CollisionRecord {
+	// 在 records 中开始的位置
+	int idx;
+	// 维持的长度
+	int length;
+	// H 和 P 的个数
+	int H;
+	int P;
+	// 子空间的 ID，在 0 - 7 之间
+	char cell_id;
+} CollisionRecord;
 
 class Ball {
 public:
@@ -26,6 +44,7 @@ public:
 	// 球的编号
 	int idx;
 	Ball(float _x, float _y, float _z);
+	bool containsRecord(SpaceRecord& record)const;
 	glm::vec3 getPosVec() const;
 };
 

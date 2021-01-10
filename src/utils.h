@@ -16,4 +16,8 @@ bool readBalls(const std::string& filename, std::vector<Ball>& balls);
 
 bool initData(Space** s, std::vector<Ball>& balls);
 
+void makeBallRecord(Ball& ball);
+
+void calIJK(int& i, int& j, int& k, float x, float y, float z);
+
 #endif // !_UTILS_H_
